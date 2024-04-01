@@ -4,15 +4,18 @@
 #include "llvm/Pass.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
+#include <stack>
+#include <string>
 
 namespace {
 struct MulToBitShift : llvm::PassInfoMixin<MulToBitShift> {
 public:
   llvm::PreservedAnalyses run(llvm::Function &F,
                               llvm::FunctionAnalysisManager &FAM) {
+    std::stack<llvm::Instruction *> worklist;
     for (llvm::BasicBlock &BB : F) {
-      for (llvm::Instruction &Inst : llvm::make_early_inc_range(BB)) {
-        if (Inst.getOpcode() != llvm::Instruction::Mul) {
+      for (llvm::Instruction &Inst : BB) {
+        if (static_cast<std::string>(Inst.getOpcodeName()) != "mul") {
           continue;
         }
         llvm::BinaryOperator *op = llvm::dyn_cast<llvm::BinaryOperator>(&Inst);
@@ -39,8 +42,13 @@ public:
                                     llvm::ConstantInt::get(op->getType(), lg1));
           }
           op->replaceAllUsesWith(val);
-          Inst.eraseFromParent();
+          worklist.push(&Inst);
         }
+      }
+      while (!worklist.empty()) {
+        llvm::Instruction *I = worklist.top();
+        I->eraseFromParent();
+        worklist.pop();
       }
     }
 
